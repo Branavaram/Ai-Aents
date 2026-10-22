@@ -352,39 +352,85 @@ if run:
         )
         tasks = [t_luna]
 
-    used = [agents_map[k] for k in agents_in_run]
-    crew = Crew(agents=used, tasks=tasks, verbose=False)
+    # Map tasks -> agent key for live tracking
+    task_to_agent_key = {}
+    for t in tasks:
+        for k, ag in agents_map.items():
+            if t.agent is ag:
+                task_to_agent_key[id(t)] = k
+                break
 
     try:
-        # First agent starts working
-        first = agents_in_run[0]
-        office_statuses[first] = "working"
-        refresh_world(office_statuses, speaker=first)
-        push_msg(first, "On it, let me dig in...")
-        push_event(first, "Started reviewing", filename)
-
-        progress.progress(20, text="Team working...")
+        progress.progress(10, text="Team starting...")
         start = time.time()
 
-        with st.spinner(f"The team is reviewing `{filename}`..."):
-            result = crew.kickoff()
+        # ─── LIVE ORCHESTRATION — run tasks one at a time ─────
+        task_outputs = {}      # id(task) -> output text
+        final_md = ""
+        total_tasks = len(tasks)
+
+        for idx, task in enumerate(tasks):
+            agent_key = task_to_agent_key.get(id(task), "alex")
+            agent_meta = TEAM[agent_key]
+
+            # Set this agent to WORKING, others to waiting
+            for k in agents_in_run:
+                office_statuses[k] = "done" if k in [task_to_agent_key.get(id(t)) for t in tasks[:idx]] else ("working" if k == agent_key else "waiting")
+            refresh_world(office_statuses, speaker=agent_key)
+            push_event(agent_key, "Started task", f"{idx+1}/{total_tasks}")
+            push_msg(agent_key, f"⏳ _thinking about this..._")
+
+            pct = int(10 + (80 * idx / total_tasks))
+            progress.progress(pct, text=f"🏃 {agent_meta['name']} is working... ({idx+1}/{total_tasks})")
+
+            # Build context string from previously-finished tasks it depends on
+            context_text = ""
+            if task.context:
+                for ctx_task in task.context:
+                    prev_output = task_outputs.get(id(ctx_task), "")
+                    if prev_output:
+                        prev_agent_key = task_to_agent_key.get(id(ctx_task), "team")
+                        prev_name = TEAM.get(prev_agent_key, {}).get("name", "Team")
+                        context_text += f"\n\n--- {prev_name}'s findings ---\n{prev_output}"
+
+            # Inject context into task description temporarily
+            original_desc = task.description
+            if context_text:
+                task.description = original_desc + "\n\nTEAM CONTEXT (what others said):" + context_text
+
+            # Actually run this agent's task
+            task_start = time.time()
+            try:
+                output = agent_meta  # placeholder
+                output = task.agent.execute_task(task=task, context=context_text, tools=[])
+                output_text = str(output)
+            except Exception as task_err:
+                output_text = f"[Error: {task_err}]"
+            finally:
+                task.description = original_desc  # restore
+
+            task_duration = time.time() - task_start
+            task_outputs[id(task)] = output_text
+
+            # Update chat with the REAL output
+            # Replace the "thinking..." placeholder by removing & re-adding
+            if st.session_state.chat_messages and st.session_state.chat_messages[-1]["text"].startswith("⏳"):
+                st.session_state.chat_messages.pop()
+
+            # Short preview for chat
+            preview = output_text[:400] + ("..." if len(output_text) > 400 else "")
+            push_msg(agent_key, preview)
+            push_event(agent_key, f"Finished in {task_duration:.1f}s", f"Produced {len(output_text)} chars")
+
+            # Mark this agent done
+            office_statuses[agent_key] = "done"
+            refresh_world(office_statuses)
+
+            # Keep the last task's output as the final markdown
+            final_md = output_text
 
         total = time.time() - start
-
-        # Everyone done
-        for k in agents_in_run:
-            office_statuses[k] = "done"
-            push_event(k, "Finished review", f"Contributed to final report")
-        refresh_world(office_statuses)
-
-        # Final message from last agent
-        last = agents_in_run[-1]
-        final_md = str(result)
-        preview = final_md[:200] + "..." if len(final_md) > 200 else final_md
-        push_msg(last, f"**Here's the final report:**\n\n{preview}")
-        push_event(last, "Delivered final verdict", f"{total:.1f}s total")
-
-        progress.progress(100, text=f"✅ Review done in {total:.1f}s")
+        progress.progress(100, text=f"✅ Team done in {total:.1f}s")
 
         st.divider()
         st.subheader(f"📋 Final Report — {filename}")
