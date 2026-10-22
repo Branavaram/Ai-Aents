@@ -4,6 +4,7 @@ import { motion } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import { Play, Zap, Shield, Bug, BookOpen, FileCode } from "lucide-react";
 import OfficeFloor from "./components/OfficeFloor";
+import Office3D from "./components/Office3D";
 import ChatPanel, { ChatMsg } from "./components/ChatPanel";
 import {
   getAgents,
@@ -27,6 +28,7 @@ export default function Home() {
   const [mode, setMode] = useState<ReviewMode>("full");
   const [code, setCode] = useState("");
   const [running, setRunning] = useState(false);
+  const [view3D, setView3D] = useState(true);
 
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
   const [bubbles, setBubbles] = useState<Record<string, string>>({});
@@ -154,14 +156,47 @@ def runCmd(cmd):
       </header>
 
       <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+        {/* View toggle */}
+        <div className="flex items-center justify-end gap-2">
+          <button
+            onClick={() => setView3D(false)}
+            className={`px-3 py-1 rounded-md text-xs font-bold tracking-wider border transition-all ${
+              !view3D
+                ? "border-[var(--neon-cyan)] bg-[var(--neon-cyan)]/10 text-[var(--neon-cyan)]"
+                : "border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--border-glow)]"
+            }`}
+          >
+            2D
+          </button>
+          <button
+            onClick={() => setView3D(true)}
+            className={`px-3 py-1 rounded-md text-xs font-bold tracking-wider border transition-all ${
+              view3D
+                ? "border-[var(--neon-pink)] bg-[var(--neon-pink)]/10 text-[var(--neon-pink)]"
+                : "border-[var(--border)] text-[var(--text-muted)] hover:border-[var(--border-glow)]"
+            }`}
+          >
+            3D 🎮
+          </button>
+        </div>
+
         {/* The office floor */}
         <section>
-          <OfficeFloor
-            agents={agents}
-            statuses={statuses}
-            bubbles={bubbles}
-            walkingTo={walkingTo}
-          />
+          {view3D ? (
+            <Office3D
+              agents={agents}
+              statuses={statuses}
+              bubbles={bubbles}
+              walkingTo={walkingTo}
+            />
+          ) : (
+            <OfficeFloor
+              agents={agents}
+              statuses={statuses}
+              bubbles={bubbles}
+              walkingTo={walkingTo}
+            />
+          )}
         </section>
 
         {/* Mode selector */}
