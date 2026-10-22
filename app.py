@@ -401,9 +401,8 @@ if run:
             # Actually run this agent's task
             task_start = time.time()
             try:
-                output = agent_meta  # placeholder
-                output = task.agent.execute_task(task=task, context=context_text, tools=[])
-                output_text = str(output)
+                output = task.execute_sync()
+                output_text = str(output.raw if hasattr(output, "raw") else output)
             except Exception as task_err:
                 output_text = f"[Error: {task_err}]"
             finally:
