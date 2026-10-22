@@ -1,0 +1,99 @@
+@import "tailwindcss";
+
+:root {
+  /* Cyberpunk neon palette */
+  --bg-void: #050510;
+  --bg-deep: #0a0a1a;
+  --bg-card: #10101f;
+  --bg-raised: #1a1a2e;
+  --border: #2a2a44;
+  --border-glow: #3f3f5f;
+
+  --neon-cyan: #00f0ff;
+  --neon-pink: #ff00e0;
+  --neon-purple: #a855f7;
+  --neon-green: #00ff9f;
+  --neon-yellow: #fff700;
+  --neon-red: #ff3860;
+  --neon-blue: #4ab8ff;
+
+  --text-primary: #e8e8f0;
+  --text-secondary: #a0a0b8;
+  --text-muted: #606080;
+}
+
+@theme inline {
+  --color-background: var(--bg-void);
+  --color-foreground: var(--text-primary);
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Monaco', monospace;
+}
+
+html, body {
+  background: var(--bg-void);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+body {
+  background-image:
+    radial-gradient(ellipse at top left,    rgba(168, 85, 247, 0.08), transparent 50%),
+    radial-gradient(ellipse at top right,   rgba(0, 240, 255, 0.08),  transparent 50%),
+    radial-gradient(ellipse at bottom left, rgba(255, 0, 224, 0.05),  transparent 50%);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg-deep); }
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--border-glow); }
+
+/* Utility classes */
+.glow-cyan   { box-shadow: 0 0 12px var(--neon-cyan), 0 0 24px rgba(0,240,255,0.3); }
+.glow-pink   { box-shadow: 0 0 12px var(--neon-pink), 0 0 24px rgba(255,0,224,0.3); }
+.glow-purple { box-shadow: 0 0 12px var(--neon-purple), 0 0 24px rgba(168,85,247,0.3); }
+.glow-green  { box-shadow: 0 0 12px var(--neon-green), 0 0 24px rgba(0,255,159,0.3); }
+
+.text-glow-cyan { text-shadow: 0 0 8px var(--neon-cyan), 0 0 16px rgba(0,240,255,0.5); }
+.text-glow-pink { text-shadow: 0 0 8px var(--neon-pink), 0 0 16px rgba(255,0,224,0.5); }
+
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(42, 42, 68, 0.3) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(42, 42, 68, 0.3) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Scan line overlay (very subtle) */
+.scanlines::before {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0,
+    transparent 2px,
+    rgba(0, 240, 255, 0.015) 3px,
+    rgba(0, 240, 255, 0.015) 4px
+  );
+  z-index: 100;
+}
+
+/* Neon border animation */
+@keyframes borderGlow {
+  0%, 100% { border-color: var(--border); }
+  50% { border-color: var(--neon-cyan); }
+}
+.animated-border { animation: borderGlow 3s ease-in-out infinite; }
+
+/* Pulse */
+@keyframes neonPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+.pulse-neon { animation: neonPulse 2s ease-in-out infinite; }

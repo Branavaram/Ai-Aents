@@ -49,4 +49,13 @@ Thumbs.db
 
 # OPTION B: Keep vault private (don't share your personal notes)
 #   → uncomment the line below
-# vault/
+# backend/vault/
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Frontend (Next.js)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/.env*.local
