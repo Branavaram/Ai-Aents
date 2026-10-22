@@ -3,6 +3,7 @@ Animated agent office — HTML/CSS component for Streamlit.
 Shows agents as avatars that move, glow, and show thoughts.
 """
 import streamlit.components.v1 as components
+from team import TEAM
 
 
 def render_office(agent_states: dict, height: int = 400):
@@ -11,19 +12,22 @@ def render_office(agent_states: dict, height: int = 400):
 
     agent_states: dict like
       {
-        "reviewer":   {"status": "working", "thought": "Checking line 42..."},
-        "security":   {"status": "waiting", "thought": ""},
-        "summarizer": {"status": "idle",    "thought": ""},
+        "alex":  {"status": "working", "thought": "Checking line 42..."},
+        "priya": {"status": "waiting", "thought": ""},
+        ...
       }
 
     status options: "idle" | "working" | "done" | "waiting"
     """
-    # Agent definitions
-    agents = [
-        {"key": "reviewer",   "name": "Reviewer",   "emoji": "🧑‍💻", "x": 15, "color": "#60a5fa"},
-        {"key": "security",   "name": "Security",   "emoji": "🛡️",   "x": 50, "color": "#f87171"},
-        {"key": "summarizer", "name": "Summarizer", "emoji": "📋",   "x": 85, "color": "#34d399"},
-    ]
+    # Pull from TEAM, keep only agents we're displaying
+    agents = []
+    for key in agent_states.keys():
+        if key in TEAM:
+            t = TEAM[key]
+            agents.append({
+                "key": key, "name": t["name"], "emoji": t["emoji"],
+                "x": t["position"], "color": t["color"],
+            })
 
     # Build each agent's HTML
     agent_html = ""
@@ -70,14 +74,7 @@ def render_office(agent_states: dict, height: int = 400):
         </div>
         """
 
-    # Draw lines between agents if one is passing to another
-    lines_html = ""
-    if agent_states.get("reviewer", {}).get("status") == "done" and \
-       agent_states.get("security", {}).get("status") in ["working", "waiting"]:
-        lines_html += '<div class="connection line1"></div>'
-    if agent_states.get("security", {}).get("status") == "done" and \
-       agent_states.get("summarizer", {}).get("status") in ["working", "waiting"]:
-        lines_html += '<div class="connection line2"></div>'
+    lines_html = ""  # (connections drawn dynamically if needed later)
 
     html = f"""
     <style>

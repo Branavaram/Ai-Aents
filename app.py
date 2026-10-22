@@ -1,5 +1,6 @@
 """
-AI Code Review Crew — v3 with history, metrics, and focus modes
+AI Dev Team Office — Streamlit UI
+5 agents with personalities, animated office, Slack chat
 Run with:  streamlit run app.py
 """
 import os
@@ -8,17 +9,15 @@ from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
 import streamlit as st
+
 from agent_office import render_office
+from chat_panel import render_chat
+from team import TEAM, get_personality_prompt
 
 # ─── Page config ──────────────────────────────────────────────
-st.set_page_config(
-    page_title="AI Code Review Crew",
-    page_icon="🤖",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="AI Dev Team", page_icon="🏢", layout="wide")
 
-# ─── Setup env ────────────────────────────────────────────────
+# ─── Env ──────────────────────────────────────────────────────
 load_dotenv()
 groq_key = os.getenv("GROQ_API_KEY")
 os.environ["OPENAI_API_KEY"] = groq_key or ""
@@ -28,386 +27,314 @@ VAULT = Path(__file__).parent / "vault"
 
 # ─── Vault helpers ────────────────────────────────────────────
 def load_vault_knowledge():
-    knowledge = []
+    out = []
     for folder in ["profile", "knowledge", "projects"]:
-        folder_path = VAULT / folder
-        if folder_path.exists():
-            for md_file in folder_path.glob("*.md"):
-                content = md_file.read_text(encoding="utf-8", errors="replace")
-                knowledge.append(f"### 📄 {folder}/{md_file.name}\n\n{content}\n")
-    return "\n---\n".join(knowledge) if knowledge else "(vault is empty)"
+        f = VAULT / folder
+        if f.exists():
+            for md in f.glob("*.md"):
+                out.append(f"### {folder}/{md.name}\n{md.read_text(encoding='utf-8', errors='replace')}")
+    return "\n---\n".join(out) if out else "(empty)"
 
-def load_recent_reviews(limit=3):
-    reviews_dir = VAULT / "reviews"
-    if not reviews_dir.exists():
-        return "(no past reviews yet)"
-    reviews = sorted(reviews_dir.glob("*.md"), reverse=True)[:limit]
-    if not reviews:
-        return "(no past reviews yet)"
-    chunks = []
-    for r in reviews:
-        chunks.append(f"### 📝 {r.name}\n\n{r.read_text(encoding='utf-8', errors='replace')[:1500]}")
-    return "\n---\n".join(chunks)
-
-def save_review(filename, review_markdown, mode):
-    reviews_dir = VAULT / "reviews"
-    reviews_dir.mkdir(parents=True, exist_ok=True)
-    date = datetime.now().strftime("%Y-%m-%d_%H%M")
+def save_review(filename, md, mode):
+    d = VAULT / "reviews"; d.mkdir(parents=True, exist_ok=True)
+    ts = datetime.now().strftime("%Y-%m-%d_%H%M")
     safe = filename.replace("/", "_").replace("\\", "_")
-    out = reviews_dir / f"{date}_[{mode}]_{safe}.md"
-    out.write_text(review_markdown, encoding="utf-8")
-    return out
+    p = d / f"{ts}_[{mode}]_{safe}.md"
+    p.write_text(md, encoding="utf-8")
+    return p
 
 def list_past_reviews():
-    """Returns list of past reviews, newest first."""
-    reviews_dir = VAULT / "reviews"
-    if not reviews_dir.exists():
-        return []
-    return sorted(reviews_dir.glob("*.md"), reverse=True)
+    d = VAULT / "reviews"
+    return sorted(d.glob("*.md"), reverse=True) if d.exists() else []
 
-# ─── Session state (for metrics) ──────────────────────────────
+# ─── Session state ────────────────────────────────────────────
 if "selected_review" not in st.session_state:
     st.session_state.selected_review = None
-if "total_tokens" not in st.session_state:
-    st.session_state.total_tokens = 0
-if "total_reviews" not in st.session_state:
-    st.session_state.total_reviews = 0
+if "chat_messages" not in st.session_state:
+    st.session_state.chat_messages = []
 
 # ─── Header ───────────────────────────────────────────────────
-st.markdown("# 🤖 AI Code Review Crew")
-st.caption("3 specialist agents review your code — with shared memory 🧠")
+st.markdown("# 🏢 AI Dev Team Office")
+st.caption("Watch 5 AI teammates review your code together — each with their own personality")
 st.divider()
 
 # ─── Sidebar ──────────────────────────────────────────────────
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.header("👥 Meet the Team")
+    for key, t in TEAM.items():
+        st.markdown(
+            f"<div style='padding:8px;margin:4px 0;border-left:3px solid {t['color']};'>"
+            f"<b>{t['emoji']} {t['name']}</b> <small style='color:#94a3b8;'>· {t['role']}</small>"
+            f"</div>", unsafe_allow_html=True
+        )
 
-    model_choice = st.selectbox(
-        "Model (via Groq)",
-        ["openai/gpt-oss-120b", "openai/gpt-oss-20b"],
-        index=0,
-    )
-
-    max_chars = st.slider("Max chars", 2000, 15000, 8000, 1000)
-
+    st.divider()
+    model_choice = st.selectbox("Model", ["openai/gpt-oss-120b", "openai/gpt-oss-20b"], index=0)
+    max_chars = st.slider("Max chars", 2000, 15000, 6000, 1000)
     use_vault = st.toggle("🧠 Use vault memory", value=True)
 
     st.divider()
-
-    # ─── Review history panel ─────────────────────────────────
-    st.header("📜 Review History")
-    past_reviews = list_past_reviews()
-    if not past_reviews:
-        st.caption("_No reviews yet. Run one!_")
-    else:
-        st.caption(f"**{len(past_reviews)}** total — click any to open")
-        for review in past_reviews[:10]:
-            name = review.stem
-            # Parse out mode and filename from stem
-            # Format: 2026-10-22_1351_[full]_page.tsx
-            parts = name.split("_", 2)
-            if len(parts) >= 3 and "[" in parts[2]:
-                date_part = parts[0]
-                time_part = parts[1]
-                rest = parts[2]
-                mode_tag = rest.split("]")[0].strip("[")
-                fname = rest.split("]_", 1)[1] if "]_" in rest else rest
-                mode_emoji = {"full": "🔍", "bugs": "🐛", "security": "🔒", "explain": "💡"}.get(mode_tag, "📄")
-                label = f"{mode_emoji} {fname[:20]} · {time_part}"
-            else:
-                label = f"📄 {name[:30]}"
-            if st.button(label, key=f"rev_{review.name}", use_container_width=True):
-                st.session_state.selected_review = review
+    st.header("📜 History")
+    past = list_past_reviews()
+    if past:
+        st.caption(f"{len(past)} reviews")
+        for r in past[:8]:
+            if st.button(f"📄 {r.stem[:28]}", key=f"h_{r.name}", use_container_width=True):
+                st.session_state.selected_review = r
                 st.rerun()
-        if len(past_reviews) > 10:
-            st.caption(f"_...and {len(past_reviews) - 10} more_")
+    else:
+        st.caption("_No reviews yet_")
 
     st.divider()
-
-    # ─── Vault stats ──────────────────────────────────────────
-    st.header("🧠 Vault")
-    vault_files = list(VAULT.rglob("*.md")) if VAULT.exists() else []
-    reviews_count = len(past_reviews)
-    col_a, col_b = st.columns(2)
-    col_a.metric("Knowledge", len([f for f in vault_files if "reviews" not in str(f)]))
-    col_b.metric("Reviews", reviews_count)
-
-    st.divider()
-
-    # ─── API status ───────────────────────────────────────────
-    st.header("🔑 API")
     if groq_key:
-        st.success(f"Groq ({groq_key[:6]}...)")
+        st.success(f"🔑 Groq ({groq_key[:6]}...)")
     else:
         st.error("No GROQ_API_KEY")
 
-# ─── MAIN AREA ────────────────────────────────────────────────
-
-# If user clicked a past review in sidebar, show it
+# ─── Show past review if clicked ──────────────────────────────
 if st.session_state.selected_review:
     st.subheader(f"📄 {st.session_state.selected_review.stem}")
-    if st.button("← Back to new review"):
+    if st.button("← Back"):
         st.session_state.selected_review = None
         st.rerun()
     st.markdown(st.session_state.selected_review.read_text(encoding="utf-8"))
     st.stop()
 
-# ─── Review focus modes ───────────────────────────────────────
-st.subheader("🎯 Review Mode")
+# ─── Mode selector ────────────────────────────────────────────
+st.subheader("🎯 Pick a review type")
 mode = st.radio(
     "Mode",
-    ["🔍 Full Review", "🐛 Bugs Only", "🔒 Security Only", "💡 Explain Code"],
-    horizontal=True,
-    label_visibility="collapsed",
+    ["🔍 Full Review (all 5)", "🐛 Bugs (Priya + Jake)", "🔒 Security (Sam)", "💡 Explain (Luna)"],
+    horizontal=True, label_visibility="collapsed",
 )
-mode_key = mode.split()[1].lower()  # "full", "bugs", "security", "explain"
 
-mode_desc = {
-    "full": "Full crew: Reviewer + Security + Summarizer",
-    "bugs": "Just the Reviewer — fast bug check",
-    "security": "Just the Security agent — vulnerability scan",
-    "explain": "Simple English walkthrough of the code",
-}
-st.caption(f"ℹ️ {mode_desc[mode_key]}")
+mode_key = {
+    "🔍 Full Review (all 5)": "full",
+    "🐛 Bugs (Priya + Jake)": "bugs",
+    "🔒 Security (Sam)":      "security",
+    "💡 Explain (Luna)":      "explain",
+}[mode]
 
 st.divider()
 
-# ─── Input area ───────────────────────────────────────────────
-col1, col2 = st.columns([1, 1])
+# ─── Input ────────────────────────────────────────────────────
+col1, col2 = st.columns(2)
 with col1:
-    st.subheader("📁 Upload file")
-    uploaded_file = st.file_uploader(
-        "Choose file",
-        type=["py", "js", "ts", "jsx", "tsx", "go", "java", "rs", "cpp", "c", "cs", "rb", "php", "sql", "html", "css", "dart"],
-        label_visibility="collapsed",
-    )
-
+    st.subheader("📁 Upload code")
+    uploaded = st.file_uploader("Upload", type=["py", "js", "ts", "jsx", "tsx", "go", "java", "rs", "cpp", "c", "cs", "rb", "php", "sql", "html", "css", "dart"], label_visibility="collapsed")
 with col2:
-    st.subheader("✍️ Or paste code")
-    pasted_code = st.text_area("Paste", height=180, placeholder="def hello():\n    print('world')", label_visibility="collapsed")
+    st.subheader("✍️ Or paste")
+    pasted = st.text_area("Paste", height=160, placeholder="def hello():\n    print('world')", label_visibility="collapsed")
 
-code_to_review = None
-filename = "snippet.py"
-language = "py"
-if uploaded_file is not None:
-    code_to_review = uploaded_file.read().decode("utf-8", errors="replace")
-    filename = uploaded_file.name
+code = None; filename = "snippet.py"; language = "py"
+if uploaded:
+    code = uploaded.read().decode("utf-8", errors="replace")
+    filename = uploaded.name
     language = Path(filename).suffix.lstrip(".") or "py"
-elif pasted_code.strip():
-    code_to_review = pasted_code
+elif pasted.strip():
+    code = pasted
 
-if code_to_review:
-    with st.expander(f"👀 Preview — {filename} ({len(code_to_review)} chars)"):
-        st.code(code_to_review[:2000] + ("\n...(truncated)" if len(code_to_review) > 2000 else ""), language=language)
-
-    if len(code_to_review) > max_chars:
-        st.warning(f"⚠️ File is {len(code_to_review)} chars — reviewing first {max_chars}")
-        code_to_review = code_to_review[:max_chars] + "\n\n# ...(truncated)"
-
-    run_button = st.button(f"🚀 Run {mode}", type="primary", use_container_width=True)
+if code:
+    with st.expander(f"👀 {filename} ({len(code)} chars)"):
+        st.code(code[:2000] + ("\n...(truncated)" if len(code) > 2000 else ""), language=language)
+    if len(code) > max_chars:
+        st.warning(f"⚠️ Truncating {len(code)} → {max_chars} chars")
+        code = code[:max_chars] + "\n# ...(truncated)"
+    run = st.button(f"🚀 Have the team review it", type="primary", use_container_width=True)
 else:
-    st.info("👆 Upload a file or paste code above to begin")
-    run_button = False
+    st.info("👆 Upload or paste code to begin")
+    run = False
 
-# ─── Run crew ─────────────────────────────────────────────────
-if run_button:
+# ─── RUN ──────────────────────────────────────────────────────
+if run:
     if not groq_key:
-        st.error("❌ No GROQ_API_KEY")
-        st.stop()
+        st.error("No GROQ_API_KEY"); st.stop()
 
     from crewai import Agent, Task, Crew, LLM
 
-    llm = LLM(
-        model=f"openai/{model_choice}",
-        api_key=groq_key,
-        base_url="https://api.groq.com/openai/v1",
-        max_tokens=4000,
-    )
+    llm = LLM(model=f"openai/{model_choice}", api_key=groq_key,
+              base_url="https://api.groq.com/openai/v1", max_tokens=3000)
 
-    # Memory block
-    memory_block = ""
-    if use_vault:
-        memory_block = f"\n---\n🧠 **YOUR MEMORY**\n\n{load_vault_knowledge()}\n\nRecent reviews:\n{load_recent_reviews(2)}\n---\n"
-
-    st.divider()
-    st.subheader("🏢 Crew in Action")
-
-    AVATARS = {
-        "reviewer": "🧑‍💻",
-        "security": "🛡️",
-        "summarizer": "📋",
-        "explainer": "🎓",
-    }
-
-    agents_in_this_run = {
-        "full": ["reviewer", "security", "summarizer"],
-        "bugs": ["reviewer"],
-        "security": ["security"],
-        "explain": ["explainer"],
+    # Who's in this run?
+    agents_in_run = {
+        "full":     ["alex", "priya", "jake", "sam", "luna"],
+        "bugs":     ["priya", "jake"],
+        "security": ["sam"],
+        "explain":  ["luna"],
     }[mode_key]
 
-    # ─── Animated office ──────────────────────────────────────
-    office_slot = st.empty()
+    memory_block = ""
+    if use_vault:
+        memory_block = f"\n--- MEMORY ---\n{load_vault_knowledge()}\n--- END MEMORY ---\n"
 
-    def update_office(states):
+    st.divider()
+
+    # Two-column layout: office left, chat right
+    office_col, chat_col = st.columns([3, 2])
+
+    with office_col:
+        st.subheader("🏢 Office")
+        office_slot = st.empty()
+        office_state = {k: {"status": "waiting", "thought": ""} for k in agents_in_run}
         with office_slot.container():
-            render_office(states, height=320)
+            render_office(office_state, height=280)
 
-    # Initial state: all waiting
-    office_state = {name: {"status": "waiting", "thought": ""} for name in agents_in_this_run}
-    update_office(office_state)
+        progress = st.progress(0, text="Team gathering...")
 
-    progress = st.progress(0, text="Starting the crew...")
-    metrics_slot = st.empty()
+    with chat_col:
+        st.subheader("💬 #team-chat")
+        chat_slot = st.empty()
+        st.session_state.chat_messages = []
+        with chat_slot.container():
+            render_chat([], height=320)
 
-    # ─── Define agents ────────────────────────────────────────
-    reviewer = Agent(
-        role="Senior Software Engineer and Code Reviewer",
-        goal="Find bugs, bad patterns, code smells. Suggest, don't rewrite.",
-        backstory=f"You've been writing code for 15 years. You suggest, you don't dump code. {memory_block}",
-        llm=llm, verbose=False, allow_delegation=False,
-    )
-    security = Agent(
-        role="Application Security Engineer",
-        goal="Find security vulnerabilities, OWASP issues, injection, secrets.",
-        backstory=f"Ex-pentester. Attacker mindset. Severity-ranked output. {memory_block}",
-        llm=llm, verbose=False, allow_delegation=False,
-    )
-    summarizer = Agent(
-        role="Engineering Lead writing the final PR comment",
-        goal="Combine findings into a scannable PR comment.",
-        backstory=f"You hate walls of text. End with APPROVE/REQUEST CHANGES/BLOCK. {memory_block}",
-        llm=llm, verbose=False, allow_delegation=False,
-    )
-    explainer = Agent(
-        role="Patient Senior Dev who explains code to junior devs",
-        goal="Walk through the code in simple English, section by section.",
-        backstory=f"You teach by explaining the WHY and the big picture, not just the what. {memory_block}",
-        llm=llm, verbose=False, allow_delegation=False,
-    )
+    def push_msg(agent_key, text):
+        st.session_state.chat_messages.append({
+            "agent": agent_key,
+            "text": text,
+            "time": datetime.now().strftime("%H:%M"),
+        })
+        with chat_slot.container():
+            render_chat(st.session_state.chat_messages, height=320)
 
-    # ─── Build tasks per mode ─────────────────────────────────
-    code_block = f"```{language}\n{code_to_review}\n```"
+    def update_office(state):
+        with office_slot.container():
+            render_office(state, height=280)
+
+    # ─── Greetings ────────────────────────────────────────────
+    for agent_key in agents_in_run:
+        push_msg(agent_key, TEAM[agent_key]["greeting"])
+        office_state[agent_key] = {"status": "waiting", "thought": TEAM[agent_key]["greeting"][:40]}
+        update_office(office_state)
+        time.sleep(0.3)
+
+    # ─── Build agents with personalities ──────────────────────
+    def mk_agent(key, goal):
+        return Agent(
+            role=f"{TEAM[key]['role']} named {TEAM[key]['name']}",
+            goal=goal,
+            backstory=get_personality_prompt(key) + memory_block,
+            llm=llm, verbose=False, allow_delegation=False,
+        )
+
+    priya = mk_agent("priya", "Review the code for bugs, bad patterns, logic errors. Catch things juniors miss.")
+    jake  = mk_agent("jake",  "Ask 'why does this work?' Add fresh-eyes observations. Flag anything confusing.")
+    sam   = mk_agent("sam",   "Find security vulnerabilities. Severity rank. OWASP references. Attacker mindset.")
+    luna  = mk_agent("luna",  "Explain findings in human English. Note where docs are missing.")
+    alex  = mk_agent("alex",  "Make the final merge/block call. Combine team findings into one clean verdict.")
+
+    agents_map = {"alex": alex, "priya": priya, "jake": jake, "sam": sam, "luna": luna}
+
+    code_block = f"```{language}\n{code}\n```"
     tasks = []
 
     if mode_key == "full":
-        t1 = Task(
-            description=f"Review this {language} code ({filename}) for bugs and quality:\n\n{code_block}\n\nBullet points, respect user's style from memory.",
-            expected_output="Prioritized list of code quality issues.",
-            agent=reviewer,
+        t_priya = Task(
+            description=f"Review this code for bugs/quality:\n{code_block}\nBullet points. Short. In your voice.",
+            expected_output="Bug and quality findings in Priya's voice.",
+            agent=priya,
         )
-        t2 = Task(
-            description=f"Security review of this {language} code:\n\n{code_block}\n\nBuild on reviewer. Severity, OWASP, attack scenario, suggested fix.",
-            expected_output="Severity-sorted security vulnerabilities.",
-            agent=security, context=[t1],
+        t_jake = Task(
+            description=f"Give FRESH-EYES observations on this code:\n{code_block}\nFlag confusing parts, ask 'why?' Short.",
+            expected_output="Junior-dev perspective notes.",
+            agent=jake, context=[t_priya],
         )
-        t3 = Task(
-            description=f"Combine findings for `{filename}` into markdown PR comment:\n\n# Code Review — {filename}\n\n## 🚨 Blockers\n## ⚠️ Should Fix\n## 💡 Nice to Have\n## ✅ Good Practices\n## Verdict\nAPPROVE | REQUEST CHANGES | BLOCK — 1 sentence why.\n\nUnder 300 words. Suggest, don't dump code.",
-            expected_output="Clean markdown PR comment under 300 words.",
-            agent=summarizer, context=[t1, t2],
+        t_sam = Task(
+            description=f"SECURITY audit of this code:\n{code_block}\nSeverity + OWASP + attack scenario. In your voice.",
+            expected_output="Security vulnerabilities.",
+            agent=sam, context=[t_priya],
         )
-        tasks = [t1, t2, t3]
+        t_luna = Task(
+            description=f"Note where DOCUMENTATION is missing/unclear:\n{code_block}\nShort list.",
+            expected_output="Documentation gaps.",
+            agent=luna, context=[t_priya],
+        )
+        t_alex = Task(
+            description=(
+                f"Combine the team's findings on `{filename}` into ONE PR comment:\n\n"
+                "# Code Review — {filename}\n\n"
+                "## 🚨 Blockers\n## ⚠️ Should Fix\n## 💡 Nice to Have\n## ✅ Good\n## Verdict\n"
+                "APPROVE | REQUEST CHANGES | BLOCK — 1 sentence why.\n\n"
+                "Under 300 words. Sign as Alex."
+            ),
+            expected_output="Final PR comment.",
+            agent=alex, context=[t_priya, t_jake, t_sam, t_luna],
+        )
+        tasks = [t_priya, t_jake, t_sam, t_luna, t_alex]
 
     elif mode_key == "bugs":
-        tasks = [Task(
-            description=f"Find bugs and bad patterns in this {language} code ({filename}):\n\n{code_block}\n\nFor each issue: function/line, problem, why it's bad, suggested direction (no full rewrite). Keep it short.",
-            expected_output="Clean bulleted bug report.",
-            agent=reviewer,
-        )]
+        t_priya = Task(
+            description=f"Review bugs in this code:\n{code_block}\nBullet points.",
+            expected_output="Bug list.", agent=priya,
+        )
+        t_jake = Task(
+            description=f"Fresh eyes on same code:\n{code_block}\nWhat seems weird?",
+            expected_output="Confusion list.", agent=jake, context=[t_priya],
+        )
+        tasks = [t_priya, t_jake]
 
     elif mode_key == "security":
-        tasks = [Task(
-            description=f"Security-only review of this {language} code ({filename}):\n\n{code_block}\n\nFor each vuln: severity, function, OWASP cat, attack scenario, suggested fix direction. Severity-sorted.",
-            expected_output="Severity-sorted security vulnerabilities.",
-            agent=security,
-        )]
+        t_sam = Task(
+            description=f"Security audit:\n{code_block}\nSeverity + OWASP + attack.",
+            expected_output="Severity-sorted vulnerabilities.", agent=sam,
+        )
+        tasks = [t_sam]
 
     elif mode_key == "explain":
-        tasks = [Task(
-            description=f"Explain this {language} code ({filename}) in simple English:\n\n{code_block}\n\nStructure: 1) What it does (big picture, 1-2 sentences). 2) Main parts (bullet each function/section with its purpose). 3) Any gotchas/complexities. Teach, don't just describe.",
-            expected_output="Clear plain-English walkthrough.",
-            agent=explainer,
-        )]
+        t_luna = Task(
+            description=f"Explain this code in plain English:\n{code_block}\nShort, warm, section by section.",
+            expected_output="Plain-English walkthrough.", agent=luna,
+        )
+        tasks = [t_luna]
 
-    # Build crew with just the agents actually used
-    agents_map = {"reviewer": reviewer, "security": security, "summarizer": summarizer, "explainer": explainer}
-    used_agents = [agents_map[a] for a in agents_in_this_run]
-
-    crew = Crew(agents=used_agents, tasks=tasks, verbose=False)
-
-    # ─── Thought bubbles per agent ────────────────────────────
-    THOUGHTS = {
-        "reviewer":   "Analyzing code structure...",
-        "security":   "Scanning for vulnerabilities...",
-        "summarizer": "Writing the PR comment...",
-        "explainer":  "Breaking it down simply...",
-    }
+    used = [agents_map[k] for k in agents_in_run]
+    crew = Crew(agents=used, tasks=tasks, verbose=False)
 
     try:
-        # Set first agent to working
-        first = agents_in_this_run[0]
-        office_state[first] = {"status": "working", "thought": THOUGHTS[first]}
+        # First agent starts working
+        first = agents_in_run[0]
+        office_state[first] = {"status": "working", "thought": "On it..."}
         update_office(office_state)
-        progress.progress(10, text="Crew working...")
+        push_msg(first, f"On it, let me dig in...")
+
+        progress.progress(20, text="Team working...")
         start = time.time()
 
-        with st.spinner(f"Running {mode}..."):
+        with st.spinner(f"The team is reviewing `{filename}`..."):
             result = crew.kickoff()
 
         total = time.time() - start
 
-        # Mark everyone done
-        for a in agents_in_this_run:
-            office_state[a] = {"status": "done", "thought": "✅ Done"}
+        # Everyone done
+        for k in agents_in_run:
+            office_state[k] = {"status": "done", "thought": "Done ✅"}
         update_office(office_state)
 
-        progress.progress(100, text=f"✅ Done in {total:.1f}s")
+        # Final message from last agent
+        last = agents_in_run[-1]
+        final_md = str(result)
+        preview = final_md[:200] + "..." if len(final_md) > 200 else final_md
+        push_msg(last, f"**Here's the final report:**\n\n{preview}")
 
-        # Try to extract token usage
-        token_info = ""
-        try:
-            usage = getattr(result, "token_usage", None)
-            if usage:
-                total_tokens = getattr(usage, "total_tokens", 0)
-                st.session_state.total_tokens += total_tokens
-                token_info = f" • {total_tokens:,} tokens"
-        except Exception:
-            pass
-
-        st.session_state.total_reviews += 1
-
-        # ─── Live metrics bar ─────────────────────────────────
-        metrics_slot.success(
-            f"⚡ **This run:** {total:.1f}s{token_info} • "
-            f"**Session total:** {st.session_state.total_reviews} reviews, "
-            f"{st.session_state.total_tokens:,} tokens • "
-            f"**Cost:** $0.00 (Groq free tier) 🎉"
-        )
+        progress.progress(100, text=f"✅ Review done in {total:.1f}s")
 
         st.divider()
-        st.subheader(f"📋 {mode} Result")
-        final_md = str(result)
+        st.subheader(f"📋 Final Report — {filename}")
         st.markdown(final_md)
 
-        # Save to vault
         saved = save_review(filename, final_md, mode_key)
-        st.success(f"🧠 Saved to vault: `{saved.relative_to(Path(__file__).parent)}`")
+        st.success(f"🧠 Saved: `{saved.relative_to(Path(__file__).parent)}`")
 
-        # Download
-        st.download_button(
-            "💾 Download as .md",
-            data=final_md,
-            file_name=f"{mode_key}_{filename}.md",
-            mime="text/markdown",
-            use_container_width=True,
-        )
+        st.download_button("💾 Download report", data=final_md,
+                           file_name=f"{mode_key}_{filename}.md",
+                           mime="text/markdown", use_container_width=True)
 
     except Exception as e:
-        for a in agents_in_this_run:
-            office_state[a] = {"status": "idle", "thought": "❌ Failed"}
+        for k in agents_in_run:
+            office_state[k] = {"status": "idle", "thought": "❌ error"}
         update_office(office_state)
+        push_msg("alex", f"Something broke, boss. Error: `{e}`")
         progress.progress(0, text="Error")
-        st.error(f"Something broke: {e}")
         with st.expander("🐛 Full error"):
             import traceback
             st.code(traceback.format_exc())
