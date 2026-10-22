@@ -12,6 +12,8 @@ import streamlit as st
 
 from agent_office import render_office
 from chat_panel import render_chat
+from office_world import render_office_world, DESKS
+from timeline import render_timeline
 from team import TEAM, get_personality_prompt
 
 # ─── Page config ──────────────────────────────────────────────
@@ -52,6 +54,10 @@ if "selected_review" not in st.session_state:
     st.session_state.selected_review = None
 if "chat_messages" not in st.session_state:
     st.session_state.chat_messages = []
+if "timeline_events" not in st.session_state:
+    st.session_state.timeline_events = []
+if "selected_agent" not in st.session_state:
+    st.session_state.selected_agent = None
 
 # ─── Header ───────────────────────────────────────────────────
 st.markdown("# 🏢 AI Dev Team Office")
@@ -62,11 +68,13 @@ st.divider()
 with st.sidebar:
     st.header("👥 Meet the Team")
     for key, t in TEAM.items():
-        st.markdown(
-            f"<div style='padding:8px;margin:4px 0;border-left:3px solid {t['color']};'>"
-            f"<b>{t['emoji']} {t['name']}</b> <small style='color:#94a3b8;'>· {t['role']}</small>"
-            f"</div>", unsafe_allow_html=True
-        )
+        if st.button(
+            f"{t['emoji']} {t['name']} · {t['role']}",
+            key=f"team_{key}",
+            use_container_width=True,
+        ):
+            st.session_state.selected_agent = key
+            st.rerun()
 
     st.divider()
     model_choice = st.selectbox("Model", ["openai/gpt-oss-120b", "openai/gpt-oss-20b"], index=0)
@@ -91,6 +99,26 @@ with st.sidebar:
     else:
         st.error("No GROQ_API_KEY")
 
+# ─── Show agent detail if clicked ─────────────────────────────
+if st.session_state.selected_agent:
+    key = st.session_state.selected_agent
+    t = TEAM[key]
+    if st.button("← Back to team"):
+        st.session_state.selected_agent = None
+        st.rerun()
+    st.markdown(
+        f"<div style='padding:24px;border-left:6px solid {t['color']};background:rgba(30,41,59,0.5);border-radius:8px;'>"
+        f"<h1 style='margin:0;'>{t['emoji']} {t['name']}</h1>"
+        f"<h3 style='color:{t['color']};margin-top:4px;'>{t['role']}</h3>"
+        f"<p style='color:#cbd5e1;font-size:15px;line-height:1.6;'>{t['personality']}</p>"
+        f"<hr style='border-color:#334155;'>"
+        f"<p style='color:#94a3b8;font-size:13px;'><b>Catchphrase:</b> <i>\"{t['greeting']}\"</i></p>"
+        f"<p style='color:#94a3b8;font-size:13px;'><b>Signs off as:</b> <code>{t['signature']}</code></p>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    st.stop()
+
 # ─── Show past review if clicked ──────────────────────────────
 if st.session_state.selected_review:
     st.subheader(f"📄 {st.session_state.selected_review.stem}")
@@ -99,6 +127,17 @@ if st.session_state.selected_review:
         st.rerun()
     st.markdown(st.session_state.selected_review.read_text(encoding="utf-8"))
     st.stop()
+
+# ─── Office World (always visible, top of page) ───────────────
+st.subheader("🏢 The Office Floor")
+world_slot = st.empty()
+with world_slot.container():
+    render_office_world(
+        agent_statuses={k: "idle" for k in TEAM},
+        height=380,
+    )
+st.caption("💡 Click an agent in the sidebar to see their profile")
+st.divider()
 
 # ─── Mode selector ────────────────────────────────────────────
 st.subheader("🎯 Pick a review type")
@@ -169,44 +208,70 @@ if run:
 
     st.divider()
 
-    # Two-column layout: office left, chat right
-    office_col, chat_col = st.columns([3, 2])
+    # Reset session chat/timeline for this run
+    st.session_state.chat_messages = []
+    st.session_state.timeline_events = []
 
-    with office_col:
-        st.subheader("🏢 Office")
-        office_slot = st.empty()
-        office_state = {k: {"status": "waiting", "thought": ""} for k in agents_in_run}
-        with office_slot.container():
-            render_office(office_state, height=280)
+    # Live office floor at top (replace the static one above)
+    world_slot_live = st.empty()
+    def refresh_world(statuses, speaker=None):
+        with world_slot_live.container():
+            render_office_world(
+                agent_statuses=statuses,
+                current_speaker=speaker,
+                height=380,
+            )
 
-        progress = st.progress(0, text="Team gathering...")
+    office_statuses = {k: "idle" for k in TEAM}
+    for k in agents_in_run:
+        office_statuses[k] = "waiting"
+    refresh_world(office_statuses)
 
+    progress = st.progress(0, text="Team gathering...")
+
+    # Chat + timeline side-by-side
+    chat_col, timeline_col = st.columns([3, 2])
     with chat_col:
         st.subheader("💬 #team-chat")
         chat_slot = st.empty()
-        st.session_state.chat_messages = []
         with chat_slot.container():
             render_chat([], height=320)
+    with timeline_col:
+        timeline_slot = st.empty()
+        with timeline_slot.container():
+            render_timeline([], height=320)
 
     def push_msg(agent_key, text):
+        now = datetime.now().strftime("%H:%M:%S")
         st.session_state.chat_messages.append({
-            "agent": agent_key,
-            "text": text,
-            "time": datetime.now().strftime("%H:%M"),
+            "agent": agent_key, "text": text, "time": now,
         })
         with chat_slot.container():
             render_chat(st.session_state.chat_messages, height=320)
 
-    def update_office(state):
-        with office_slot.container():
-            render_office(state, height=280)
+    def push_event(agent_key, action, detail=""):
+        now = datetime.now().strftime("%H:%M:%S")
+        st.session_state.timeline_events.append({
+            "agent": agent_key, "action": action, "time": now, "detail": detail,
+        })
+        with timeline_slot.container():
+            render_timeline(st.session_state.timeline_events, height=320)
 
-    # ─── Greetings ────────────────────────────────────────────
+    def update_office(state):
+        """Legacy — now routes to office world."""
+        for k, v in state.items():
+            office_statuses[k] = v.get("status", "idle")
+        refresh_world(office_statuses)
+
+    # ─── Greetings — each agent "arrives" ─────────────────────
     for agent_key in agents_in_run:
+        office_statuses[agent_key] = "talking"
+        refresh_world(office_statuses, speaker=agent_key)
         push_msg(agent_key, TEAM[agent_key]["greeting"])
-        office_state[agent_key] = {"status": "waiting", "thought": TEAM[agent_key]["greeting"][:40]}
-        update_office(office_state)
-        time.sleep(0.3)
+        push_event(agent_key, "Arrived at the office", f"Role: {TEAM[agent_key]['role']}")
+        time.sleep(0.4)
+        office_statuses[agent_key] = "waiting"
+    refresh_world(office_statuses)
 
     # ─── Build agents with personalities ──────────────────────
     def mk_agent(key, goal):
@@ -293,9 +358,10 @@ if run:
     try:
         # First agent starts working
         first = agents_in_run[0]
-        office_state[first] = {"status": "working", "thought": "On it..."}
-        update_office(office_state)
-        push_msg(first, f"On it, let me dig in...")
+        office_statuses[first] = "working"
+        refresh_world(office_statuses, speaker=first)
+        push_msg(first, "On it, let me dig in...")
+        push_event(first, "Started reviewing", filename)
 
         progress.progress(20, text="Team working...")
         start = time.time()
@@ -307,14 +373,16 @@ if run:
 
         # Everyone done
         for k in agents_in_run:
-            office_state[k] = {"status": "done", "thought": "Done ✅"}
-        update_office(office_state)
+            office_statuses[k] = "done"
+            push_event(k, "Finished review", f"Contributed to final report")
+        refresh_world(office_statuses)
 
         # Final message from last agent
         last = agents_in_run[-1]
         final_md = str(result)
         preview = final_md[:200] + "..." if len(final_md) > 200 else final_md
         push_msg(last, f"**Here's the final report:**\n\n{preview}")
+        push_event(last, "Delivered final verdict", f"{total:.1f}s total")
 
         progress.progress(100, text=f"✅ Review done in {total:.1f}s")
 
@@ -331,9 +399,10 @@ if run:
 
     except Exception as e:
         for k in agents_in_run:
-            office_state[k] = {"status": "idle", "thought": "❌ error"}
-        update_office(office_state)
+            office_statuses[k] = "idle"
+        refresh_world(office_statuses)
         push_msg("alex", f"Something broke, boss. Error: `{e}`")
+        push_event("alex", "Error occurred", str(e)[:100])
         progress.progress(0, text="Error")
         with st.expander("🐛 Full error"):
             import traceback
