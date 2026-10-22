@@ -223,13 +223,25 @@ if run:
 
     # Live office floor at top (replace the static one above)
     world_slot_live = st.empty()
-    def refresh_world(statuses, speaker=None):
+    speech_state = {}   # live speech bubbles
+
+    def refresh_world(statuses, speaker=None, walking=None, bubbles=None):
         with world_slot_live.container():
             render_office_world(
                 agent_statuses=statuses,
                 current_speaker=speaker,
-                height=380,
+                walking_to=walking,
+                speech_bubbles=bubbles or speech_state,
+                height=420,
             )
+
+    def set_bubble(agent_key, text):
+        """Show a short speech bubble over an agent for the next render."""
+        snippet = text[:80] + ("..." if len(text) > 80 else "")
+        speech_state[agent_key] = snippet
+
+    def clear_bubble(agent_key):
+        speech_state.pop(agent_key, None)
 
     office_statuses = {k: "idle" for k in TEAM}
     for k in agents_in_run:
@@ -272,13 +284,15 @@ if run:
             office_statuses[k] = v.get("status", "idle")
         refresh_world(office_statuses)
 
-    # ─── Greetings — each agent "arrives" ─────────────────────
+    # ─── Greetings — each agent "arrives" at their desk ───────
     for agent_key in agents_in_run:
         office_statuses[agent_key] = "talking"
+        set_bubble(agent_key, TEAM[agent_key]["greeting"])
         refresh_world(office_statuses, speaker=agent_key)
         push_msg(agent_key, TEAM[agent_key]["greeting"])
         push_event(agent_key, "Arrived at the office", f"Role: {TEAM[agent_key]['role']}")
-        time.sleep(0.4)
+        time.sleep(0.5)
+        clear_bubble(agent_key)
         office_statuses[agent_key] = "waiting"
     refresh_world(office_statuses)
 
@@ -386,6 +400,9 @@ if run:
             # Set this agent to WORKING, others to waiting
             for k in agents_in_run:
                 office_statuses[k] = "done" if k in [task_to_agent_key.get(id(t)) for t in tasks[:idx]] else ("working" if k == agent_key else "waiting")
+
+            # Show "thinking" bubble while they work
+            set_bubble(agent_key, "💭 Thinking...")
             refresh_world(office_statuses, speaker=agent_key)
             push_event(agent_key, "Started task", f"{idx+1}/{total_tasks}")
             push_msg(agent_key, f"⏳ _thinking about this..._")
@@ -425,17 +442,26 @@ if run:
             task_outputs[id(task)] = output_text
 
             # Update chat with the REAL output
-            # Replace the "thinking..." placeholder by removing & re-adding
             if st.session_state.chat_messages and st.session_state.chat_messages[-1]["text"].startswith("⏳"):
                 st.session_state.chat_messages.pop()
 
-            # Short preview for chat
             preview = output_text[:400] + ("..." if len(output_text) > 400 else "")
             push_msg(agent_key, preview)
             push_event(agent_key, f"Finished in {task_duration:.1f}s", f"Produced {len(output_text)} chars")
 
-            # Mark this agent done
+            # Short bubble preview with ACTUAL output
+            short_bubble = output_text.split("\n")[0][:70] + "..."
+            set_bubble(agent_key, short_bubble)
+
+            # Walk to Alex (if not Alex) to deliver the report
+            if agent_key != "alex" and "alex" in TEAM:
+                office_statuses[agent_key] = "walking"
+                refresh_world(office_statuses, walking={agent_key: "alex"})
+                time.sleep(0.6)  # time to see the walk
+
+            # Mark done, back to desk, bubble clears
             office_statuses[agent_key] = "done"
+            clear_bubble(agent_key)
             refresh_world(office_statuses)
 
             # Keep the last task's output as the final markdown
