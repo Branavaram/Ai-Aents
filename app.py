@@ -15,6 +15,7 @@ from chat_panel import render_chat
 from office_world import render_office_world, DESKS
 from timeline import render_timeline
 from team import TEAM, get_personality_prompt
+from knowledge_loader import load_knowledge_for, list_knowledge_files
 
 # ─── Page config ──────────────────────────────────────────────
 st.set_page_config(page_title="AI Dev Team", page_icon="🏢", layout="wide")
@@ -92,6 +93,14 @@ with st.sidebar:
                 st.rerun()
     else:
         st.caption("_No reviews yet_")
+
+    st.divider()
+    st.header("📚 Knowledge Base")
+    kfiles = list_knowledge_files()
+    for domain, files in kfiles.items():
+        with st.expander(f"📁 {domain} ({len(files)})"):
+            for f in files:
+                st.caption(f"• {f}")
 
     st.divider()
     if groq_key:
@@ -273,12 +282,13 @@ if run:
         office_statuses[agent_key] = "waiting"
     refresh_world(office_statuses)
 
-    # ─── Build agents with personalities ──────────────────────
+    # ─── Build agents with personalities + domain knowledge ───
     def mk_agent(key, goal):
+        knowledge = load_knowledge_for(key, max_chars=6000)
         return Agent(
             role=f"{TEAM[key]['role']} named {TEAM[key]['name']}",
             goal=goal,
-            backstory=get_personality_prompt(key) + memory_block,
+            backstory=get_personality_prompt(key) + knowledge + memory_block,
             llm=llm, verbose=False, allow_delegation=False,
         )
 
