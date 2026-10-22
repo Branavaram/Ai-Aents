@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from dotenv import load_dotenv
 import streamlit as st
+from agent_office import render_office
 
 # ─── Page config ──────────────────────────────────────────────
 st.set_page_config(
@@ -229,9 +230,8 @@ if run_button:
         memory_block = f"\n---\n🧠 **YOUR MEMORY**\n\n{load_vault_knowledge()}\n\nRecent reviews:\n{load_recent_reviews(2)}\n---\n"
 
     st.divider()
-    st.subheader("👥 Crew in Action")
+    st.subheader("🏢 Crew in Action")
 
-    # ─── Agent cards with avatars ─────────────────────────────
     AVATARS = {
         "reviewer": "🧑‍💻",
         "security": "🛡️",
@@ -239,7 +239,6 @@ if run_button:
         "explainer": "🎓",
     }
 
-    # Decide which agents to show based on mode
     agents_in_this_run = {
         "full": ["reviewer", "security", "summarizer"],
         "bugs": ["reviewer"],
@@ -247,12 +246,16 @@ if run_button:
         "explain": ["explainer"],
     }[mode_key]
 
-    cols = st.columns(len(agents_in_this_run))
-    status_slots = {}
-    for col, agent_name in zip(cols, agents_in_this_run):
-        with col:
-            status_slots[agent_name] = st.empty()
-            status_slots[agent_name].info(f"# {AVATARS[agent_name]}\n**{agent_name.title()}**\n\n⏸️ Waiting")
+    # ─── Animated office ──────────────────────────────────────
+    office_slot = st.empty()
+
+    def update_office(states):
+        with office_slot.container():
+            render_office(states, height=320)
+
+    # Initial state: all waiting
+    office_state = {name: {"status": "waiting", "thought": ""} for name in agents_in_this_run}
+    update_office(office_state)
 
     progress = st.progress(0, text="Starting the crew...")
     metrics_slot = st.empty()
@@ -332,10 +335,19 @@ if run_button:
 
     crew = Crew(agents=used_agents, tasks=tasks, verbose=False)
 
-    # ─── Run with metrics ─────────────────────────────────────
+    # ─── Thought bubbles per agent ────────────────────────────
+    THOUGHTS = {
+        "reviewer":   "Analyzing code structure...",
+        "security":   "Scanning for vulnerabilities...",
+        "summarizer": "Writing the PR comment...",
+        "explainer":  "Breaking it down simply...",
+    }
+
     try:
-        for agent_name in agents_in_this_run:
-            status_slots[agent_name].warning(f"# {AVATARS[agent_name]}\n**{agent_name.title()}**\n\n🏃 Running...")
+        # Set first agent to working
+        first = agents_in_this_run[0]
+        office_state[first] = {"status": "working", "thought": THOUGHTS[first]}
+        update_office(office_state)
         progress.progress(10, text="Crew working...")
         start = time.time()
 
@@ -344,8 +356,10 @@ if run_button:
 
         total = time.time() - start
 
-        for agent_name in agents_in_this_run:
-            status_slots[agent_name].success(f"# {AVATARS[agent_name]}\n**{agent_name.title()}**\n\n✅ Done")
+        # Mark everyone done
+        for a in agents_in_this_run:
+            office_state[a] = {"status": "done", "thought": "✅ Done"}
+        update_office(office_state)
 
         progress.progress(100, text=f"✅ Done in {total:.1f}s")
 
@@ -389,8 +403,9 @@ if run_button:
         )
 
     except Exception as e:
-        for agent_name in agents_in_this_run:
-            status_slots[agent_name].error(f"# {AVATARS[agent_name]}\n**{agent_name.title()}**\n\n❌ Failed")
+        for a in agents_in_this_run:
+            office_state[a] = {"status": "idle", "thought": "❌ Failed"}
+        update_office(office_state)
         progress.progress(0, text="Error")
         st.error(f"Something broke: {e}")
         with st.expander("🐛 Full error"):
