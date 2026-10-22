@@ -297,7 +297,7 @@ if run:
         t_priya = Task(
             description=f"Review this code for bugs/quality:\n{code_block}\nBullet points. Short. In your voice.",
             expected_output="Bug and quality findings in Priya's voice.",
-            agent=priya,
+            agent=priya, context=[],
         )
         t_jake = Task(
             description=f"Give FRESH-EYES observations on this code:\n{code_block}\nFlag confusing parts, ask 'why?' Short.",
@@ -330,7 +330,7 @@ if run:
     elif mode_key == "bugs":
         t_priya = Task(
             description=f"Review bugs in this code:\n{code_block}\nBullet points.",
-            expected_output="Bug list.", agent=priya,
+            expected_output="Bug list.", agent=priya, context=[],
         )
         t_jake = Task(
             description=f"Fresh eyes on same code:\n{code_block}\nWhat seems weird?",
@@ -341,14 +341,14 @@ if run:
     elif mode_key == "security":
         t_sam = Task(
             description=f"Security audit:\n{code_block}\nSeverity + OWASP + attack.",
-            expected_output="Severity-sorted vulnerabilities.", agent=sam,
+            expected_output="Severity-sorted vulnerabilities.", agent=sam, context=[],
         )
         tasks = [t_sam]
 
     elif mode_key == "explain":
         t_luna = Task(
             description=f"Explain this code in plain English:\n{code_block}\nShort, warm, section by section.",
-            expected_output="Plain-English walkthrough.", agent=luna,
+            expected_output="Plain-English walkthrough.", agent=luna, context=[],
         )
         tasks = [t_luna]
 
@@ -400,6 +400,9 @@ if run:
 
             # Actually run this agent's task
             task_start = time.time()
+            # Ensure context is a list (not CrewAI's _NotSpecified sentinel)
+            if not isinstance(task.context, list):
+                task.context = []
             try:
                 output = task.execute_sync()
                 output_text = str(output.raw if hasattr(output, "raw") else output)
