@@ -52,10 +52,18 @@ Thumbs.db
 # backend/vault/
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Frontend (Next.js)
+# Frontend v1 (Next.js)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 frontend/node_modules/
 frontend/.next/
 frontend/out/
 frontend/.env.local
 frontend/.env*.local
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Frontend v2 (Isometric 3D office)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+frontend-v2/node_modules/
+frontend-v2/dist/
+frontend-v2/data/
+frontend-v2/.env*

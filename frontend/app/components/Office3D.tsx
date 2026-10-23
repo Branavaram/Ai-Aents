@@ -1,6 +1,6 @@
 "use client";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Text, Html, Grid } from "@react-three/drei";
+import { OrbitControls, Text, Billboard, Grid } from "@react-three/drei";
 import { Suspense, useRef, useMemo } from "react";
 import * as THREE from "three";
 import type { Agent } from "../lib/api";
@@ -123,35 +123,39 @@ function Robot({ agent, status, bubble, position }: {
         <meshBasicMaterial color={status === "working" ? "#00f0ff" : color} />
       </mesh>
 
-      {/* Name tag + emoji above head */}
-      <Html position={[0, 3.6, 0]} center distanceFactor={10}>
-        <div className="flex flex-col items-center pointer-events-none select-none">
-          <div
-            className="text-xs font-bold px-2 py-0.5 rounded-md border backdrop-blur"
-            style={{
-              color: agent.color,
-              borderColor: agent.color,
-              background: "rgba(10,10,26,0.9)",
-              textShadow: `0 0 8px ${agent.color}`,
-            }}
+      {/* Name tag — true 3D text that faces the camera */}
+      <Billboard position={[0, 3.6, 0]}>
+        <Text
+          fontSize={0.3}
+          color={agent.color}
+          outlineWidth={0.02}
+          outlineColor="#000000"
+          anchorX="center"
+          anchorY="middle"
+        >
+          {agent.name}
+        </Text>
+      </Billboard>
+
+      {/* Speech bubble (3D text) */}
+      {bubble && (
+        <Billboard position={[0, 4.2, 0]}>
+          <mesh>
+            <planeGeometry args={[Math.min(bubble.length * 0.08 + 0.4, 4), 0.5]} />
+            <meshBasicMaterial color="#10101f" transparent opacity={0.9} />
+          </mesh>
+          <Text
+            fontSize={0.18}
+            color="#e8e8f0"
+            maxWidth={3.5}
+            anchorX="center"
+            anchorY="middle"
+            position={[0, 0, 0.01]}
           >
-            {agent.emoji} {agent.name}
-          </div>
-          {bubble && (
-            <div
-              className="mt-1 text-[10px] px-2 py-1 rounded max-w-[180px] text-center backdrop-blur border"
-              style={{
-                color: "#e8e8f0",
-                borderColor: agent.color,
-                background: "rgba(10,10,26,0.95)",
-                boxShadow: `0 0 12px ${agent.color}60`,
-              }}
-            >
-              {bubble}
-            </div>
-          )}
-        </div>
-      </Html>
+            {bubble.slice(0, 60)}
+          </Text>
+        </Billboard>
+      )}
 
       {/* Status indicator (floating ball above) */}
       {status === "working" && (
@@ -244,12 +248,18 @@ function OfficeRoom() {
           opacity={0.6}
         />
       </mesh>
-      <Html position={[0, 3.3, 0]} center distanceFactor={8}>
-        <div className="text-[10px] font-bold tracking-widest text-[#c084fc] whitespace-nowrap pointer-events-none select-none"
-          style={{ textShadow: "0 0 10px #a855f7" }}>
-          🧠 SHARED BRAIN
-        </div>
-      </Html>
+      <Billboard position={[0, 3.3, 0]}>
+        <Text
+          fontSize={0.3}
+          color="#c084fc"
+          outlineWidth={0.03}
+          outlineColor="#000000"
+          anchorX="center"
+          anchorY="middle"
+        >
+          SHARED BRAIN
+        </Text>
+      </Billboard>
     </group>
   );
 }

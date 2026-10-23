@@ -1,4 +1,11 @@
-# 🤖 AI Dev Office — Cyberpunk Edition
+# 🏢 AI Dev Office — 3D Isometric Edition
+
+> **New in v4:** full 3D isometric office with 35 desks (5 agents active + 30 future seats).
+> Based on [agents-office](https://github.com/ajsahni/agents-office) by Sahni.ai, remixed with cyberpunk theme + our Code Review Crew.
+
+---
+
+
 
 A multi-agent AI code review system with a **cyberpunk-themed React UI** and **FastAPI backend**. Watch 5 AI teammates (each with their own personality + domain knowledge) collaborate on your code in real-time.
 
@@ -33,14 +40,21 @@ pip install fastapi "uvicorn[standard]"
 uvicorn api:app --reload --port 8000
 ```
 
-### 2. Frontend (Next.js)
+### 2a. Frontend v2 — 3D Isometric Office (NEW)
+```bash
+cd frontend-v2
+npm install --omit=optional
+npm start
+```
+Open **http://localhost:4520** 🎉
+
+### 2b. Frontend v1 — React/Next.js (legacy, still works)
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-
-Open **http://localhost:3000** 🎉
+Open **http://localhost:3000**
 
 ---
 
