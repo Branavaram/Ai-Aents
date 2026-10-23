@@ -189,5 +189,17 @@
     }
   },
   "active": "54b7ac690feee239",
-  "lastOpenFiles": []
+  "lastOpenFiles": [
+    "Agents Office/skills/dispatch-and-verdict/SKILL.md",
+    "Agents Office/skills/dispatch-and-verdict",
+    "Agents Office/skills/docs-and-synthesis/SKILL.md",
+    "Agents Office/skills/docs-and-synthesis",
+    "Agents Office/skills/testing-pytest/SKILL.md",
+    "Agents Office/skills/testing-pytest",
+    "Agents Office/skills/python-correctness/SKILL.md",
+    "Agents Office/skills/python-correctness",
+    "Agents Office/skills/owasp-and-bandit/SKILL.md",
+    "Agents Office/skills/owasp-and-bandit",
+    "Agents Office/skills"
+  ]
 }
