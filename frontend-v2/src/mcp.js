@@ -279,11 +279,11 @@ export function initMcp({ scene, hud, LAYOUT, DEPTS, FR, R, connectors = null })
   // ── the MODEL layer (AJ, 5 Sep 2026): Claude + ChatGPT run the office headless ──
   // Two logos on the right of the top bar, each wired straight into the Brain pod — the
   // conduits pulse on their own so the thinking is visible even when nothing else fires.
-  const MODELS = { claude: '#D97757', chatgpt: '#151414' };
+  const MODELS = { chatgpt: '#F55036' };   // AI Dev Office: just GPT-OSS (via Groq) — one logo
   const topmodels = document.getElementById('topmodels');
   const modelImgs = {};
   if (topmodels) {
-    topmodels.innerHTML = `<span class="tc-lab"><span class="dot"></span>RUNS HEADLESS ON</span>`;
+    topmodels.innerHTML = `<span class="tc-lab"><span class="dot"></span>POWERED BY GROQ</span>`;
     Object.keys(MODELS).forEach((k, i) => {
       const img = document.createElement('img');
       img.src = LOGOS[k].img;
