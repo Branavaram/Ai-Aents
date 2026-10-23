@@ -191,6 +191,14 @@ export function initTasks(ctx) {
   function complete(t) {
     t.state = 'done'; t.doneAt = Date.now(); t.progress = 1;
     doneCount[t.dept]++;
+    // AI Dev Office: bump real-time dept counters when a task completes
+    if (window.AIDO && !t.piece) {
+      window.AIDO.bump(t.dept, 'reviewed', 1);
+      // Rough heuristic: count "issues found" from obvious markers in the output
+      const out = String(t.result || '').toLowerCase();
+      const issues = (out.match(/\b(critical|high|medium|low|owasp|cve|bug|vulnerab)/g) || []).length;
+      if (issues) window.AIDO.bump(t.dept, 'issues', Math.min(issues, 10));
+    }
     const r = R[t.agent];
     spawnEmote(r, '✓');
     feedPush(r, '✓', 'Done: ' + t.title);

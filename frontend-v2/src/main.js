@@ -318,31 +318,33 @@ function tickDim(dt) {
     m.color.copy(m.userData.baseColor).lerp(m.userData.dimColor, focusDim);
 }
 
-/* ---------- department billboards — v1's exact agreed metric rows + amber approval row ---------- */
+/* ---------- department billboards — AI Dev Office: real counters, start at 0 ---------- */
 const kv = id => KPIS.find(k => k.id === id).val;
 let brainNotes = brain.state.notes;
-const BB_ROWS = profileRows() || {
-  emails: [
-    ['EMAILS SENT', () => STATS.emailsSent],
-    ['REPLIES DRAFTED', () => STATS.drafts]],
-  delivery: [
-    ['REPORTS SENT', () => STATS.reports],
-    ['ON TRACK', () => STATS.onTrack + ' / ' + STATS.projects]],
-  sales: [
-    ['CALLS S·A·J', () => STATS.spencer + '·' + STATS.arwin + '·' + STATS.jack],
-    ['NEW MANAGERS', () => STATS.managers],
-    ['AUTO-ONBOARDED', () => STATS.autoOnb]],
-  marketing: [
-    ['NEW INSIGHTS', () => STATS.insMkt],
-    ['COST PER USER', () => '$' + Math.round(STATS.cpa)]],
-  ops: [
-    ['PROPOSALS MADE', () => Math.round(kv('proposals'))],
-    ['NEW INSIGHTS', () => STATS.insOps]],
-  fin: [
-    ['INVOICES ISSUED', () => Math.round(kv('invoices'))],
-    ['BILLS PAID', () => STATS.billsPaid]],
-  brain: [
-    ['NOTES INDEXED', () => brainNotes.toLocaleString('en-NZ')]],
+
+// Real-time counters per dept (updated when tasks complete — see updateBillboards())
+const RT = {
+  emails:    { reviewed: 0, issues: 0 },    // CODE REVIEW
+  delivery:  { drafted: 0, pages: 0 },      // DOCS
+  sales:     { written: 0, passed: 0 },     // TESTING
+  marketing: { reviewed: 0, flagged: 0 },   // DESIGN
+  fin:       { queries: 0, migrations: 0 }, // DATA
+  ops:       { deploys: 0, incidents: 0 },  // DEVOPS
+};
+
+const BB_ROWS = {
+  emails:    [['FILES REVIEWED', () => RT.emails.reviewed], ['ISSUES FOUND', () => RT.emails.issues]],
+  delivery:  [['DOCS DRAFTED',   () => RT.delivery.drafted], ['PAGES OUTPUT', () => RT.delivery.pages]],
+  sales:     [['TESTS WRITTEN',  () => RT.sales.written],   ['PASSED',       () => RT.sales.passed]],
+  marketing: [['UIS REVIEWED',   () => RT.marketing.reviewed], ['A11Y FLAGS',() => RT.marketing.flagged]],
+  fin:       [['QUERIES RUN',    () => RT.fin.queries],    ['MIGRATIONS',   () => RT.fin.migrations]],
+  ops:       [['DEPLOYS',        () => RT.ops.deploys],    ['INCIDENTS',    () => RT.ops.incidents]],
+  brain:     [['NOTES INDEXED',  () => brainNotes.toLocaleString('en-NZ')]],
+};
+
+// Expose a hook so tasks.js can bump counters when real work completes
+window.AIDO = {
+  bump: (dept, key = 'reviewed', n = 1) => { if (RT[dept] && RT[dept][key] != null) RT[dept][key] += n; },
 };
 if (PROFILE && !BB_ROWS.brain) BB_ROWS.brain = [['NOTES INDEXED', () => brainNotes.toLocaleString('en-NZ')]];
 for (const k of [...DEPT_KEYS, 'brain']) {
