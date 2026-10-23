@@ -6,13 +6,16 @@
 // V3.6.1 (10 Sep 2026): AJ asked for an EFFORT selection beside the model. Five levels as the CLI
 // names them; AUTO (empty) = the model's own default (Opus runs at high). Same four places, same
 // precedence as the model, then the model's own.
+// AI Dev Office — Groq models + legacy Claude keys (same selector works for both)
 export const MODELS = {
+  'gpt-oss-120b': { key: 'gpt-oss-120b', name: 'GPT-OSS 120B (Groq)', flag: 'gpt-oss-120b', id: 'openai/gpt-oss-120b' },
+  'gpt-oss-20b':  { key: 'gpt-oss-20b',  name: 'GPT-OSS 20B (Groq)',  flag: 'gpt-oss-20b',  id: 'openai/gpt-oss-20b' },
   sonnet: { key: 'sonnet', name: 'Sonnet', flag: 'sonnet', id: 'claude-sonnet-5' },
   opus:   { key: 'opus',   name: 'Opus',   flag: 'opus',   id: 'claude-opus-5', effort: 'high' },
   fable:  { key: 'fable',  name: 'Fable',  flag: 'fable',  id: 'claude-fable-5-1' },
 };
-export const MODEL_KEYS = ['sonnet', 'opus', 'fable'];
-export const DEFAULT_MODEL = 'sonnet';
+export const MODEL_KEYS = ['gpt-oss-120b', 'gpt-oss-20b', 'sonnet', 'opus', 'fable'];
+export const DEFAULT_MODEL = 'gpt-oss-120b';
 export const FROM_TEXT = { task: 'this task', routine: 'this routine', agent: 'this agent', office: 'office default', model: 'the model\'s own' };
 export const EFFORT_KEYS = ['low', 'medium', 'high', 'xhigh', 'max'];
 export const EFFORT_NAME = { low: 'Low', medium: 'Medium', high: 'High', xhigh: 'X-high', max: 'Max' };
@@ -37,11 +40,13 @@ export function effortFor({ task, routine, agent, office, model } = {}) {
   return { effort: m.effort || null, from: 'model' };
 }
 
-/** "opus" · "Opus" · "claude-opus-5" → "opus"; anything else → null. */
+/** "opus" · "Opus" · "claude-opus-5" · "gpt-oss-120b" → key; anything else → null. */
 export function normModel(s) {
   const t = String(s || '').toLowerCase().trim();
   if (!t) return null;
-  for (const k of MODEL_KEYS) if (t === k || t.includes(k)) return k;
+  // exact or substring match (longer keys first so "gpt-oss-120b" beats "gpt-oss-20b")
+  const sorted = [...MODEL_KEYS].sort((a, b) => b.length - a.length);
+  for (const k of sorted) if (t === k || t.includes(k)) return k;
   return null;
 }
 export const modelName = k => (MODELS[k] || MODELS[DEFAULT_MODEL]).name;

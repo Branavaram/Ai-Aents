@@ -82,12 +82,34 @@ const refreshSkills = () => { reloadRoster(); const s = loadSkills(BRAIN, AGENTS
 const leadOf = dept => AGENTS.find(a => a.department === dept && a.lead) || AGENTS.find(a => a.department === dept);
 const setupMap = () => Object.fromEntries(DEPT_KEYS.map(k => [k, onboard.isSetUp(AGENTS, skills, k)]));
 
-let backend = 'claude-cli', sdk = null;
-if (process.env.ANTHROPIC_API_KEY) {
+// ─── Groq backend (AI Dev Office — free, fast, no Claude needed) ──────────
+let backend = 'groq', sdk = null;
+const GROQ_KEY = process.env.GROQ_API_KEY || loadEnvFromFile('.env').GROQ_API_KEY || loadEnvFromFile('../backend/.env').GROQ_API_KEY;
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
+// Models actually available on Groq (map Claude names → GPT-OSS variants)
+const GROQ_MODEL_MAP = {
+  'sonnet':         'openai/gpt-oss-120b',   // default smart
+  'opus':           'openai/gpt-oss-120b',   // same, biggest Groq has
+  'fable':          'openai/gpt-oss-120b',
+  'gpt-oss-120b':   'openai/gpt-oss-120b',
+  'gpt-oss-20b':    'openai/gpt-oss-20b',
+};
+const groqModel = m => GROQ_MODEL_MAP[m] || GROQ_MODEL_MAP['sonnet'];
+
+function loadEnvFromFile(p) {
   try {
-    const { default: Anthropic } = await import('@anthropic-ai/sdk');
-    sdk = new Anthropic(); backend = 'anthropic-sdk';
-  } catch (e) { console.warn('SDK not installed (npm install @anthropic-ai/sdk) — using the Claude CLI:', e.message.split('\n')[0]); }
+    const out = {};
+    for (const line of fs.readFileSync(p, 'utf8').split('\n')) {
+      const [k, ...v] = line.split('='); if (!k || !v.length) continue;
+      out[k.trim()] = v.join('=').trim();
+    }
+    return out;
+  } catch { return {}; }
+}
+
+if (!GROQ_KEY) {
+  console.warn('⚠️  No GROQ_API_KEY found — tasks will fail. Set it in .env or backend/.env');
 }
 
 /* ---------- storage ---------- */
@@ -118,7 +140,41 @@ function ranOn(mu, want) {
   const fam = normModel(want) || cfg.model;
   return keys.find(k => k.includes(fam)) || keys.filter(k => !/haiku/.test(k)).sort((a, b) => (mu[b].outputTokens || 0) - (mu[a].outputTokens || 0))[0] || keys[0];
 }
-async function askX(system, user, { maxTokens = 4000, tools = true, timeout = RUN_TIMEOUT, model = cfg.model, effort = null } = {}) { // model: sonnet · opus · fable · effort: low…max or null = the model's own (src/models.js)
+async function askX(system, user, { maxTokens = 4000, tools = true, timeout = RUN_TIMEOUT, model = cfg.model, effort = null } = {}) {
+  // ─── GROQ PATH (AI Dev Office — primary) ─────────────────────────────
+  if (GROQ_KEY) {
+    const body = {
+      model: groqModel(model),
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+      max_tokens: maxTokens,
+      temperature: 0.5,
+    };
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), timeout);
+    try {
+      const r = await fetch(GROQ_URL, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: ctl.signal,
+      });
+      clearTimeout(timer);
+      if (!r.ok) {
+        const errText = await r.text();
+        throw new Error(`Groq ${r.status}: ${errText.slice(0, 200)}`);
+      }
+      const data = await r.json();
+      const text = (data.choices?.[0]?.message?.content || '').trim();
+      const u = data.usage ? { input_tokens: data.usage.prompt_tokens, output_tokens: data.usage.completion_tokens } : null;
+      bumpUsage(u);
+      return { text, tools: [], usage: u, modelId: data.model || body.model };
+    } catch (e) {
+      clearTimeout(timer);
+      throw new Error(e.name === 'AbortError' ? `Groq took longer than ${timeout / 1000}s` : e.message);
+    }
+  }
+
+  // ─── Legacy Claude SDK fallback (only if ANTHROPIC_API_KEY is set) ────
   if (sdk) {
     const res = await sdk.messages.create({ model: modelId(model), max_tokens: maxTokens, system, messages: [{ role: 'user', content: user }] });
     if (res.stop_reason === 'refusal') throw new Error('Claude declined this request');

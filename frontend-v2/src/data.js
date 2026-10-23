@@ -86,15 +86,15 @@ export const LAYOUT = {
 
 // Department billboard metrics (v1 rule #5: live metrics float above each dept,
 // values tick green on change, "Waiting Approval" pulses amber when > 0).
+// AI Dev Office — billboards start at ZERO (real counts fill in as reviews happen)
 export const BILLBOARDS = {
-  emails:    [{ id: 'emails',    label: 'EMAILS SENT',      val: 128 }],
-  delivery:  [{ id: 'reports',   label: 'REPORTS SENT',     val: 9 }],
-  sales:     [{ id: 'leads',     label: 'LEADS ENRICHED',   val: 47 },
-              { id: 'callhrs',   label: 'CALL HRS ROUTED',  val: 9.5, fmt: v => v.toFixed(1) + 'h', step: 0.4 }],
-  marketing: [{ id: 'adspend',   label: 'AD SPEND TODAY',   val: 684, fmt: v => '$' + Math.round(v).toLocaleString('en-NZ'), step: 12 }],
-  ops:       [{ id: 'proposals', label: 'PROPOSALS SENT',   val: 6 }],
-  fin:       [{ id: 'invoices',  label: 'INVOICES ISSUED', val: 23 }],
-  brain:     [{ id: 'notes',     label: 'NOTES INDEXED',    val: 1204, fmt: v => Math.round(v).toLocaleString('en-NZ') }],
+  emails:    [{ id: 'reviewed',   label: 'FILES REVIEWED',   val: 0 }],
+  delivery:  [{ id: 'docs',       label: 'DOCS DRAFTED',     val: 0 }],
+  sales:     [{ id: 'tests',      label: 'TESTS WRITTEN',    val: 0 }],
+  marketing: [{ id: 'designs',    label: 'DESIGNS REVIEWED', val: 0 }],
+  ops:       [{ id: 'deploys',    label: 'DEPLOYS CHECKED',  val: 0 }],
+  fin:       [{ id: 'queries',    label: 'QUERIES RUN',      val: 0 }],
+  brain:     [{ id: 'notes',      label: 'NOTES INDEXED',    val: 18 }],
 };
 
 // Approval asks (agent requests → AJ decides; v1 flavour).

@@ -1056,9 +1056,8 @@ function fireAgentEvent(seedTs) {
     if (modalOpen === r.a.id && modalTab === 'activity') renderActivity(r.a.id);
   }
 }
-// seed a believable history so Activity isn't empty at boot
-for (let i = 0; i < 170; i++) fireAgentEvent(Date.now() - ri(2, 200) * 60000);
-for (const r of Object.values(R)) r.feed.sort((a, b) => b.ts - a.ts);
+// AI Dev Office — start with a CLEAN board (no fake history)
+// (original: for (let i = 0; i < 170; i++) fireAgentEvent(...))
 
 /* ---------- minimal sim: work bobs, screen updates, brain meetings ---------- */
 let meeting = null; // Brain meetings fire ONLY on the X hotkey (AJ's call — demo cue, not ambient)
