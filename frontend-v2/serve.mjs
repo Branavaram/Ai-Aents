@@ -141,7 +141,7 @@ function ranOn(mu, want) {
   return keys.find(k => k.includes(fam)) || keys.filter(k => !/haiku/.test(k)).sort((a, b) => (mu[b].outputTokens || 0) - (mu[a].outputTokens || 0))[0] || keys[0];
 }
 async function askX(system, user, { maxTokens = 4000, tools = true, timeout = RUN_TIMEOUT, model = cfg.model, effort = null } = {}) {
-  // ─── GROQ PATH (AI Dev Office — primary) ─────────────────────────────
+  // ─── GROQ PATH (AI Dev Office — primary, with 429 retry) ─────────────
   if (GROQ_KEY) {
     const body = {
       model: groqModel(model),
@@ -149,29 +149,53 @@ async function askX(system, user, { maxTokens = 4000, tools = true, timeout = RU
       max_tokens: maxTokens,
       temperature: 0.5,
     };
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), timeout);
-    try {
-      const r = await fetch(GROQ_URL, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: ctl.signal,
-      });
-      clearTimeout(timer);
-      if (!r.ok) {
-        const errText = await r.text();
-        throw new Error(`Groq ${r.status}: ${errText.slice(0, 200)}`);
+    const maxRetries = 5;
+    let lastErr = null;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      const ctl = new AbortController();
+      const timer = setTimeout(() => ctl.abort(), timeout);
+      try {
+        const r = await fetch(GROQ_URL, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: ctl.signal,
+        });
+        clearTimeout(timer);
+
+        if (r.status === 429 || r.status === 503) {
+          // Rate limited — read the retry hint and wait
+          let waitMs = 2500 * (attempt + 1);   // backoff: 2.5s, 5s, 7.5s, 10s, 12.5s
+          try {
+            const errText = await r.text();
+            const m = errText.match(/try again in ([\d.]+)s/i);
+            if (m) waitMs = Math.max(waitMs, Math.ceil(parseFloat(m[1]) * 1000) + 500);
+            lastErr = `Groq ${r.status}: ${errText.slice(0, 150)}`;
+          } catch { lastErr = `Groq ${r.status}`; }
+          console.log(`  ⏳ rate-limit, waiting ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`);
+          await new Promise(res => setTimeout(res, waitMs));
+          continue;
+        }
+
+        if (!r.ok) {
+          const errText = await r.text();
+          throw new Error(`Groq ${r.status}: ${errText.slice(0, 200)}`);
+        }
+
+        const data = await r.json();
+        const text = (data.choices?.[0]?.message?.content || '').trim();
+        const u = data.usage ? { input_tokens: data.usage.prompt_tokens, output_tokens: data.usage.completion_tokens } : null;
+        bumpUsage(u);
+        return { text, tools: [], usage: u, modelId: data.model || body.model };
+      } catch (e) {
+        clearTimeout(timer);
+        if (e.name === 'AbortError') throw new Error(`Groq took longer than ${timeout / 1000}s`);
+        lastErr = e.message;
+        // non-rate-limit error — don't retry
+        if (!/429|503|rate|limit/i.test(e.message)) throw e;
       }
-      const data = await r.json();
-      const text = (data.choices?.[0]?.message?.content || '').trim();
-      const u = data.usage ? { input_tokens: data.usage.prompt_tokens, output_tokens: data.usage.completion_tokens } : null;
-      bumpUsage(u);
-      return { text, tools: [], usage: u, modelId: data.model || body.model };
-    } catch (e) {
-      clearTimeout(timer);
-      throw new Error(e.name === 'AbortError' ? `Groq took longer than ${timeout / 1000}s` : e.message);
     }
+    throw new Error(`Groq failed after ${maxRetries} retries: ${lastErr}`);
   }
 
   // ─── Legacy Claude SDK fallback (only if ANTHROPIC_API_KEY is set) ────
