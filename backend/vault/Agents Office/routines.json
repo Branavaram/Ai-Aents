@@ -1,0 +1,25 @@
+{
+  "_about": "Scheduled tasks the AI Dev Office runs on its own clock. Routines fire via src/when.js and run through our Groq-powered askX().",
+  "routines": [
+    {
+      "id": "weekly-security-sweep",
+      "dept": "emails",
+      "agent": "vmail",
+      "title": "Weekly security sweep",
+      "text": "Review this week's merged PRs (if any are in the Brain) for new security issues. Focus on OWASP A01-A10 patterns. Draft a short memo (<300 words) with 'Critical / High / Medium' sections and send to Alex for the final call.",
+      "when": { "kind": "weekly", "days": [1], "at": "09:00" },
+      "needsOk": true,
+      "paused": false
+    },
+    {
+      "id": "daily-code-health",
+      "dept": "emails",
+      "agent": "elead",
+      "title": "Daily code-health digest",
+      "text": "Summarise what the code review crew did yesterday (reviews completed, verdicts, top issues). 5 bullets max. Save to the Brain as a dated note.",
+      "when": { "kind": "weekdays", "at": "08:30" },
+      "needsOk": false,
+      "paused": true
+    }
+  ]
+}
