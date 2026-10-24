@@ -149,7 +149,7 @@ async function askX(system, user, { maxTokens = 4000, tools = true, timeout = RU
       max_tokens: maxTokens,
       temperature: 0.5,
     };
-    const maxRetries = 5;
+    const maxRetries = 10;   // was 5 — Luna is last-in-queue and needs more patience
     let lastErr = null;
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       const ctl = new AbortController();
@@ -165,11 +165,11 @@ async function askX(system, user, { maxTokens = 4000, tools = true, timeout = RU
 
         if (r.status === 429 || r.status === 503) {
           // Rate limited — read the retry hint and wait
-          let waitMs = 2500 * (attempt + 1);   // backoff: 2.5s, 5s, 7.5s, 10s, 12.5s
+          let waitMs = 5000 + 3000 * attempt;   // 5s, 8s, 11s, 14s... — doubles baseline from before
           try {
             const errText = await r.text();
             const m = errText.match(/try again in ([\d.]+)s/i);
-            if (m) waitMs = Math.max(waitMs, Math.ceil(parseFloat(m[1]) * 1000) + 500);
+            if (m) waitMs = Math.max(waitMs, Math.ceil(parseFloat(m[1]) * 1000) + 1000);
             lastErr = `Groq ${r.status}: ${errText.slice(0, 150)}`;
           } catch { lastErr = `Groq ${r.status}`; }
           console.log(`  ⏳ rate-limit, waiting ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})`);
