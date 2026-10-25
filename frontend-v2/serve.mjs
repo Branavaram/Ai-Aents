@@ -351,23 +351,52 @@ async function runTeam(task, mode) {
   const index = vaultIndex();
   const seats = AGENTS.filter(a => a.department === dept).map(a => ({ id: a.id, lead: a.lead, name: a.name, role: a.role, does: a.does, skills: skills.names(a) }));
   const max = Math.min(TEAMS.max, teams.askedSize(task.text) || TEAMS.max);
-  // 1. the plan — the lead splits the request across the desks (Sonnet, no tools: a JSON job)
-  const pp = teams.planPrompt({ business: cfg.name, deptName: DEPTS[dept].name, lead, seats, text: task.text, title: task.title, max, notes: contextText(index, relevantNotes(index, dept, task.title + ' ' + task.text, 3)).slice(0, 4000) });
+  // 1. the plan — for Code Review (emails dept) the pipeline is fixed; for other depts the lead plans via LLM
   let plan;
-  try { plan = teams.parsePlan(await ask(pp.system, pp.user, { maxTokens: 1400, timeout: 150000, model: 'sonnet' }), { seats, lead, max, fallback: task }); }
-  catch (e) { plan = { pieces: [{ agent: lead.id, title: task.title, text: task.text }], why: '', solo: true, error: e.message }; }
+  if (dept === 'emails') {
+    // Hardcoded Code Review pipeline — deterministic, no LLM planning call needed
+    plan = {
+      pieces: [
+        { agent: 'cmail', title: 'Find correctness bugs and code smells',          text: `Review the code for correctness, logic errors, Python anti-patterns, PEP 8 violations, and Fowler smells. Focus on bugs that would crash or silently misbehave. Format each finding as: file/line · what's wrong · why it bites · fix direction.\n\nOriginal task: ${task.text}` },
+        { agent: 'vmail', title: 'Audit security — OWASP Top 10 + Bandit',          text: `Audit the code for exploitable security vulnerabilities. Cite OWASP IDs (A01-A10), Bandit codes (B###), or CWE numbers. Rank each finding Critical/High/Medium/Low with a one-sentence attack scenario and a fix direction.\n\nOriginal task: ${task.text}` },
+        { agent: 'imail', title: 'Write pytest suite for the issues found',        text: `Write ready-to-paste pytest code covering the bugs and vulnerabilities the previous specialists flagged. Include edge-case tests, mock external calls, and flag any code that is untestable with a refactor suggestion.\n\nOriginal task: ${task.text}` },
+        { agent: 'kmail', title: 'Synthesize findings and update patterns.md',     text: `Read the previous specialists' outputs and write ONE plain-English summary under 200 words with sections "🔴 Must fix", "🟡 Should fix", "💡 Nice to have", "✅ Good". Also note any docstring/naming/API issues. End with "Hand to Alex:" one sentence. Then append a new dated entry to vault/learnings/patterns.md with the recurring pattern you observed.\n\nOriginal task: ${task.text}` },
+      ],
+      why: 'Code Review pipeline: Priya (bugs) → Sam (security) → Jake (tests) → Luna (synthesis).',
+      solo: false,
+    };
+    console.log(`  ⚑ ${task.id} using hardcoded Code Review pipeline (4 specialists)`);
+  } else {
+    // Other departments: the lead plans via LLM
+    const pp = teams.planPrompt({ business: cfg.name, deptName: DEPTS[dept].name, lead, seats, text: task.text, title: task.title, max, notes: contextText(index, relevantNotes(index, dept, task.title + ' ' + task.text, 3)).slice(0, 4000) });
+    try { plan = teams.parsePlan(await ask(pp.system, pp.user, { maxTokens: 1400, timeout: 150000, model: 'sonnet' }), { seats, lead, max, fallback: task }); }
+    catch (e) { plan = { pieces: [{ agent: lead.id, title: task.title, text: task.text }], why: '', solo: true, error: e.message }; }
+  }
+  // SEQUENTIAL PIPELINE (V3.7, 24 Oct 2026): Code Review runs Priya → Sam → Jake → Luna in order,
+  // each specialist reads the previous ones' findings and builds on them (no duplicates, cohesive output,
+  // Jake writes tests for the actual bugs/vulns found, Luna synthesizes real material not thin air).
+  const PIPELINE_ORDER = ['cmail', 'vmail', 'imail', 'kmail']; // Priya → Sam → Jake → Luna
+  plan.pieces.sort((a, b) => {
+    const ai = PIPELINE_ORDER.indexOf(a.agent); const bi = PIPELINE_ORDER.indexOf(b.agent);
+    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+  });
   task.team = { ...(task.team || {}), lead: lead.id, max, pieces: plan.pieces.map(p => ({ ...p, state: 'next' })), messages: [], why: plan.why, solo: plan.solo, plannedAt: Date.now() };
   persist(task);
-  console.log(`  ⚑ ${task.id} team of ${plan.pieces.length}: ${plan.pieces.map(p => p.agent).join(' + ')}${plan.why ? ' — ' + plan.why : ''}`);
-  // 2. the pieces — one Claude process per desk, at the same time (at most `max` in flight)
+  console.log(`  ⚑ ${task.id} sequential pipeline: ${plan.pieces.map(p => p.agent).join(' → ')}${plan.why ? ' — ' + plan.why : ''}`);
+  // 2. the pieces — ONE AT A TIME, each reads the previous ones' output
   const ids = task.team.pieces.map(p => p.agent);
-  await teams.pool(task.team.pieces, max, async piece => {
+  for (const piece of task.team.pieces) {
     const a = AGENTS.find(x => x.id === piece.agent);
     piece.state = 'doing'; piece.startedAt = Date.now(); persist(task);
     try {
       const read = relevantNotes(index, dept, piece.title + ' ' + piece.text, 3);
+      // previous specialists' findings in this run (sequential pipeline context)
+      const prior = task.team.pieces.filter(p => p.result && p.agent !== piece.agent && p.state === 'done');
+      const priorBlock = prior.length ? '\n\n--- PREVIOUS SPECIALISTS IN THIS REVIEW ---\n' +
+        prior.map(p => `## ${nameOf(p.agent)} (${p.title})\n${p.result}`).join('\n\n') +
+        '\n--- END PREVIOUS FINDINGS ---\n\nBuild on these. DO NOT repeat what they already said. Add YOUR lane only. If you confirm or escalate a prior finding, cite it: "Priya flagged X; confirming it is also OWASP A03."' : '';
       const system = agentSystem(a, index, read, { extra: teams.teamSection({ me: a, lead, pieces: task.team.pieces, nameOf }), words: 220 });
-      const user = `Task (the whole request, for context): ${task.title}\nOwner's request: ${task.text}\n\nYOUR PIECE: ${piece.title}\n${piece.text}` + routineLineFor(task) + (mode === 'draft' ? modeLineFor('draft', task) : '');
+      const user = `Task (the whole request, for context): ${task.title}\nOwner's request: ${task.text}\n\nYOUR PIECE: ${piece.title}\n${piece.text}${priorBlock}` + routineLineFor(task) + (mode === 'draft' ? modeLineFor('draft', task) : '');
       const { pick, eff } = pickFor(task, a);
       const { text, tools, modelId: ran } = await askX(system, user, { model: pick.model, effort: eff.effort });
       const { body, messages } = teams.parseMessages(text, ids);
@@ -376,7 +405,22 @@ async function runTeam(task, mode) {
     } catch (e) { Object.assign(piece, { result: 'Could not complete this piece: ' + e.message, error: true }); }
     piece.state = 'done'; piece.doneAt = Date.now(); persist(task);
     console.log(`    ${piece.error ? '✗' : '✓'} ${a.name}: ${piece.title} (${(piece.result || '').length} chars${piece.tools?.length ? ', tools: ' + piece.tools.join(' ') : ''})`);
-  });
+    // Luna's brain-keeper hook: append a pattern entry to vault/learnings/patterns.md after her piece
+    if (piece.agent === 'kmail' && !piece.error && dept === 'emails') {
+      try {
+        const learnDir = path.join(BRAIN, 'learnings');
+        fs.mkdirSync(learnDir, { recursive: true });
+        const patternsFile = path.join(learnDir, 'patterns.md');
+        if (!fs.existsSync(patternsFile)) fs.writeFileSync(patternsFile, '# Code Review Patterns Journal\n\n> Luna appends one entry per team review. Over time this becomes your crew\'s codified lessons.\n\n');
+        const date = new Date().toISOString().slice(0, 10);
+        const specialists = task.team.pieces.filter(p => ['cmail', 'vmail', 'imail'].includes(p.agent) && p.result).map(p => nameOf(p.agent)).join(', ');
+        const summary = (piece.result || '').split('\n').filter(l => l.trim()).slice(0, 8).join('\n');
+        const entry = `## ${date} · ${task.title}\n- **Specialists:** ${specialists || '—'}\n- **Luna\'s summary:**\n${summary.split('\n').map(l => '  > ' + l).join('\n')}\n- **Source task:** [[${date} ${task.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 60)}]]\n\n`;
+        fs.appendFileSync(patternsFile, entry);
+        console.log(`    📚 appended to ${patternsFile}`);
+      } catch (e) { console.log(`    ⚠ patterns.md append failed: ${e.message}`); }
+    }
+  }
   // 3. the final — the lead writes the deliverable from the pieces and the notes
   return runTeamLead(task, null, mode);
 }

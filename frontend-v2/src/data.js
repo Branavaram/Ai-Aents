@@ -31,11 +31,11 @@ export const DEPTS = {
 // 35 agents (V3.4, 7 Sep 2026: every department has a lead). grid = [col,row] desk slot on the department plinth.
 export const AGENTS = [
   // EMAILS (5) — replaced Customer Support, 5 Sep 2026
-  { id: 'elead', name: 'EMAILS LEAD',         dept: 'emails',    lead: true,  grid: [0.5, 0], hair: '#2b2b2b', skin: '#E8B98E' },
-  { id: 'cmail', name: 'CLIENT EMAILS',       dept: 'emails',    grid: [0, 1], hair: '#3b2b1d', skin: '#F0C9A0' },
-  { id: 'imail', name: 'INTERNAL EMAILS',     dept: 'emails',    grid: [1, 1], hair: '#111111', skin: '#C68B59' },
-  { id: 'vmail', name: 'VENDOR EMAILS',       dept: 'emails',    grid: [0, 2], hair: '#7a3b12', skin: '#F5D5B0' },
-  { id: 'kmail', name: 'CONTRACTOR EMAILS',   dept: 'emails',    grid: [1, 2], hair: '#4a2a10', skin: '#D89F70' },
+  { id: 'elead', name: 'ALEX',                dept: 'emails',    lead: true,  grid: [0.5, 0], hair: '#2b2b2b', skin: '#E8B98E' },
+  { id: 'cmail', name: 'PRIYA',               dept: 'emails',    grid: [0, 1], hair: '#3b2b1d', skin: '#F0C9A0' },
+  { id: 'imail', name: 'JAKE',                dept: 'emails',    grid: [1, 1], hair: '#111111', skin: '#C68B59' },
+  { id: 'vmail', name: 'SAM',                 dept: 'emails',    grid: [0, 2], hair: '#7a3b12', skin: '#F5D5B0' },
+  { id: 'kmail', name: 'LUNA',                dept: 'emails',    grid: [1, 2], hair: '#4a2a10', skin: '#D89F70' },
   // SALES (6) — Sales Lead at the head; Proposals moved in from Operations, Outreach retired
   { id: 'lexi',  name: 'SALES LEAD',          dept: 'sales',     lead: true,  grid: [0.5, 0], hair: '#5a2d0c', skin: '#F0C9A0' },
   { id: 'enzo',  name: 'LEAD ENRICHER',       dept: 'sales',     grid: [0, 1], hair: '#1c1c2e', skin: '#E0A878' },
